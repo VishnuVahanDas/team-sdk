@@ -42,6 +42,19 @@ public interface Sbxpc extends StdCallLibrary {
             IntByReference year, IntByReference month, IntByReference day,
             IntByReference hour, IntByReference minute, IntByReference second);
 
+    /**
+     * Loads the WHOLE general log (read and unread records) into the read
+     * buffer. ReadGeneralLogData only returns records not yet marked read.
+     */
+    byte ReadAllGLogData(int machine);
+
+    /** Reads one record loaded by ReadAllGLogData; 0 when drained. */
+    byte GetAllGLogData(int machine,
+            IntByReference tmMachine, IntByReference enrollNumber,
+            IntByReference eMachine, IntByReference verifyMode,
+            IntByReference year, IntByReference month, IntByReference day,
+            IntByReference hour, IntByReference minute, IntByReference second);
+
     /** Loads the enrolled-user list into the read buffer. */
     byte ReadAllUserID(int machine);
 

@@ -86,22 +86,34 @@ public class DeviceClient {
         }
     }
 
-    /** Opens the session, replays the log buffer, closes the session. */
-    public List<Punch> pullLogs() throws IOException {
+    /**
+     * Opens the session, replays the log buffer, closes the session.
+     *
+     * @param all true reads every record on the device (ReadAllGLogData);
+     *            false reads only records not yet marked read, which misses
+     *            history another tool (or the device itself) already marked.
+     */
+    public List<Punch> pullLogs(boolean all) throws IOException {
         Sbxpc sdk = dll();
         connect(sdk);
         try {
             List<Punch> punches = new ArrayList<>();
-            if (sdk.ReadGeneralLogData(machine, (byte) 0) == 0) {
-                return punches; // device reachable but log buffer unavailable
+            byte loaded = all ? sdk.ReadAllGLogData(machine)
+                              : sdk.ReadGeneralLogData(machine, (byte) 0);
+            if (loaded == 0) {
+                IntByReference err = new IntByReference();
+                sdk.GetLastError(machine, err);
+                System.err.printf("%s returned 0, sdk error %d (empty log or read failure)%n",
+                        all ? "ReadAllGLogData" : "ReadGeneralLogData", err.getValue());
+                return punches;
             }
             IntByReference m = new IntByReference(), enroll = new IntByReference(),
                     em = new IntByReference(), verify = new IntByReference(),
                     y = new IntByReference(), mo = new IntByReference(),
                     d = new IntByReference(), h = new IntByReference(),
                     mi = new IntByReference(), s = new IntByReference();
-            while (sdk.GetGeneralLogData(machine, m, enroll, em, verify,
-                    y, mo, d, h, mi, s) != 0) {
+            while ((all ? sdk.GetAllGLogData(machine, m, enroll, em, verify, y, mo, d, h, mi, s)
+                        : sdk.GetGeneralLogData(machine, m, enroll, em, verify, y, mo, d, h, mi, s)) != 0) {
                 punches.add(new Punch(enroll.getValue(), verify.getValue(),
                         LocalDateTime.of(y.getValue(), mo.getValue(), d.getValue(),
                                 h.getValue(), mi.getValue(), s.getValue())));
@@ -151,8 +163,12 @@ public class DeviceClient {
      * use the stored one (the whole device log on first run).
      */
     public SyncResult sync(PunchStore store, LocalDateTime since) throws IOException {
+        boolean firstRun = since == null && !Files.exists(stateFile);
         LocalDateTime watermark = since != null ? since : readWatermark();
-        List<Punch> fresh = pullLogs().stream()
+        // Backfills and first runs need records already marked read on the device.
+        List<Punch> all = pullLogs(since != null || firstRun);
+        System.out.printf("device returned %d record(s), keeping those after %s%n", all.size(), watermark);
+        List<Punch> fresh = all.stream()
                 .filter(p -> p.time().isAfter(watermark))
                 .sorted(Comparator.comparing(Punch::time))
                 .toList();
