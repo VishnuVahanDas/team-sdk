@@ -14,7 +14,8 @@ Z200BW ──LAN──> this agent (Windows PC) ──JDBC──> PostgreSQL on 
 - Picks up **Sync device** requests within ~3 s.
 - Dedup: newest synced punch time is kept in `device-sync-state.txt`; the DB
   also ignores duplicates, so re-syncs are safe. The device log is never wiped.
-- First run syncs today's punches only.
+- First run syncs every punch still in the device log. To re-pull the full
+  history later, use **Sync all history** on the dashboard.
 
 ```
 sdk/

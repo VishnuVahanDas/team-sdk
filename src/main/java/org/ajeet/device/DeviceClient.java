@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -31,8 +30,8 @@ import java.util.Map;
  */
 public class DeviceClient {
 
-    /** Sync watermark for a first run: punches from today onward. */
-    private static final LocalDateTime DEFAULT_SINCE = LocalDate.now().atStartOfDay();
+    /** Sync watermark for a first run: everything still in the device log. */
+    private static final LocalDateTime DEFAULT_SINCE = LocalDateTime.of(2000, 1, 1, 0, 0);
 
     private final String ip;
     private final int port;
@@ -149,7 +148,7 @@ public class DeviceClient {
     /**
      * Pulls the device log and stores punches newer than the watermark. Pass
      * {@code since} to reset the watermark (e.g. backfill), or {@code null} to
-     * use the stored one (today's start on first run).
+     * use the stored one (the whole device log on first run).
      */
     public SyncResult sync(PunchStore store, LocalDateTime since) throws IOException {
         LocalDateTime watermark = since != null ? since : readWatermark();
