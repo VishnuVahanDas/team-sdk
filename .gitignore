@@ -1,0 +1,11 @@
+target/
+.env
+device-sync-state.txt
+
+# Vendor SDK DLLs (proprietary) - copy SBXPCDLL64.dll + SBPCCOMM64.dll in by hand
+native/
+
+.idea/
+*.iml
+.vscode/
+.DS_Store
