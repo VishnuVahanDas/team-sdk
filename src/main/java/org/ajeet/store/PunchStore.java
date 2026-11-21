@@ -6,8 +6,10 @@ import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -43,8 +45,63 @@ public class PunchStore {
                             UNIQUE (enroll_number, punch_time, verify_label)
                         )""");
             }
+            relabelLegacyPunches();
         } catch (SQLException e) {
             throw new IOException("PostgreSQL init failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * One-time migration: labels written before the packed verify mode was
+     * decoded ("Mode 407", or wrong names like "Face" for code 7) are
+     * rewritten with {@link Punch#label}. Needed because verify_label is part
+     * of the dedup key - otherwise a re-sync would duplicate every punch.
+     * Runs once (marker in schema_migrations), in one transaction.
+     */
+    private void relabelLegacyPunches() throws SQLException {
+        final String id = "2026-11-21-verify-labels";
+        try (Statement st = conn.createStatement()) {
+            st.execute("CREATE TABLE IF NOT EXISTS schema_migrations (id TEXT PRIMARY KEY, applied_at TIMESTAMP NOT NULL DEFAULT now())");
+        }
+        try (PreparedStatement ps = conn.prepareStatement("SELECT 1 FROM schema_migrations WHERE id = ?")) {
+            ps.setString(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return;
+            }
+        }
+        List<String> labels = new ArrayList<>();
+        try (Statement st = conn.createStatement();
+             ResultSet rs = st.executeQuery("SELECT DISTINCT verify_label FROM punches")) {
+            while (rs.next()) labels.add(rs.getString(1));
+        }
+        conn.setAutoCommit(false);
+        try (PreparedStatement upd = conn.prepareStatement("""
+                     UPDATE punches p SET verify_label = ?
+                     WHERE p.verify_label = ? AND NOT EXISTS (
+                         SELECT 1 FROM punches q WHERE q.enroll_number = p.enroll_number
+                           AND q.punch_time = p.punch_time AND q.verify_label = ?)""");
+             PreparedStatement del = conn.prepareStatement("DELETE FROM punches WHERE verify_label = ?");
+             PreparedStatement mark = conn.prepareStatement("INSERT INTO schema_migrations (id) VALUES (?)")) {
+            int changed = 0;
+            for (String old : labels) {
+                Integer code = Punch.legacyCode(old);
+                if (code == null) continue;
+                String now = Punch.label(code);
+                if (now.equals(old)) continue;
+                upd.setString(1, now); upd.setString(2, old); upd.setString(3, now);
+                changed += upd.executeUpdate();
+                del.setString(1, old); // leftovers already exist under the new label
+                del.executeUpdate();
+            }
+            mark.setString(1, id);
+            mark.executeUpdate();
+            conn.commit();
+            System.out.printf("relabelled %d legacy punch(es) with decoded verify modes%n", changed);
+        } catch (SQLException e) {
+            conn.rollback();
+            throw e;
+        } finally {
+            conn.setAutoCommit(true);
         }
     }
 
