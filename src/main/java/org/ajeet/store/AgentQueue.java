@@ -32,6 +32,10 @@ public class AgentQueue {
         try {
             conn = DriverManager.getConnection(url, user, password);
             try (Statement st = conn.createStatement()) {
+                // The dashboard writes requested_at with now() in UTC. The JDBC
+                // session otherwise takes this PC's zone (e.g. IST), which skews
+                // now() by hours: every request looks stale and is expired at once.
+                st.execute("SET TIME ZONE 'UTC'");
                 st.execute("""
                         CREATE TABLE IF NOT EXISTS sync_agent (
                             id            INT PRIMARY KEY CHECK (id = 1),
